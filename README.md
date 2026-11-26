@@ -12,7 +12,7 @@
 
 中文 | [English](README_en.md)
 
-基于 Docker 的微信/QQ Linux 客户端，使用 Selkies WebRTC 技术提供浏览器访问支持。
+基于 Docker 的微信/QQ Linux 客户端，使用 Selkies WebRTC 技术提供浏览器访问支持。现已支持 AI Agent 通过 API 操作微信，并提供可安装的 [Agent Skill](#ai-agent-通过-api-操作微信)。
 
 ## 项目简介
 
@@ -20,7 +20,7 @@
 
 ## 升级注意事项
 
-> 如果升级后部分功能缺失，请先清空本地挂载目录下的openbox目录(如`./config/.config/openbox`)。
+从旧版切换到新版 `latest` 前，请先备份 `/config`，并保留原 Compose 中的 `PUID` 和 `PGID`。微信更新后可能需要重新扫码或在手机上确认。[升级与回滚步骤](#从旧版升级或回滚)
 
 > 仓库内置了上游微信版本自动检测机制：GitHub Actions 会定时检查官方 `.deb` 包版本，检测到变化后自动更新 `versions/upstream.env` 并触发镜像构建。
 
@@ -30,13 +30,11 @@
 - 🐳 **Docker化部署**：简单的容器化部署，环境隔离
 - 🔒 **数据持久化**：支持配置和聊天记录持久化存储
 - 🎨 **中文支持**：完整的中文字体和本地化支持，支持本地中文输入法
-- 🖼️ **图片复制**：支持通过侧边栏面板开启图片复制
-- 📁 **文件传输**：支持通过侧边栏面板进行文件传输
+- 📁 **文件传输**：在浏览器侧栏的“文件”面板上传和下载文件，默认目录为容器内的 `/config/Desktop`。
 - 🖥️ **AMD64和ARM64架构支持**：兼容主流CPU架构
 - 🔧 **硬件加速**：可选的 GPU 硬件加速支持
-- 🪟 **窗口切换器**：左上角增加切换悬浮窗，方便切换到后台窗口，为后续添加其它功能做基础
 - 🤖 **自动启动**：可配置自动启动微信和QQ客户端（可选）
-- 📋 **桌面快捷方式集成**：自动扫描 `~/Desktop/` 下的 `.desktop` 文件并添加到右键菜单，方便启动第三方应用（如通过 proot-apps 安装的应用）
+- 📋 **桌面快捷方式集成**：自动将 `~/Desktop/` 下的 `.desktop` 快捷方式添加到右键菜单，也可选择 **Reload Menu** 手动刷新
 - 📂 **文件管理器**：内置 PCManFM 轻量文件管理器，右键菜单即可启动，方便管理容器内文件
 
 ## 截图展示
@@ -53,21 +51,23 @@
 
 ### 快速部署
 
+创建 `.env` 文件并设置非空的 `PASSWORD`，可通过 `CUSTOM_USER` 指定用户名（默认 `abc`）。
+
 1. **直接使用已构建的镜像进行快速部署**
 
 GitHub Container Registry镜像：
 ```bash
-docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri ghcr.io/nickrunning/wechat-selkies:latest
+docker run -it --env-file .env -p 3001:3001 -v ./config:/config ghcr.io/nickrunning/wechat-selkies:latest
 ```
 
 Docker Hub镜像：
 ```bash
-docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickrunning/wechat-selkies:latest
+docker run -it --env-file .env -p 3001:3001 -v ./config:/config nickrunning/wechat-selkies:latest
 ```
 
 > **精简版镜像**：如果只需要微信（不含 QQ 和文件管理器），可使用 `minimal` 标签，镜像体积更小：
 > ```bash
-> docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri ghcr.io/nickrunning/wechat-selkies:minimal
+> docker run -it --env-file .env -p 3001:3001 -v ./config:/config ghcr.io/nickrunning/wechat-selkies:minimal
 > ```
 > 精简版也支持版本号标签，如 `:1.2.3-minimal`、`:1.2-minimal`，方便锁定特定版本。
 
@@ -77,6 +77,9 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
    > **注意：** 映射3000端口用于HTTP访问，3001端口用于HTTPS访问，建议使用HTTPS。
 
 ### Docker Compose 部署
+
+以下示例用于首次部署。升级时请沿用原 Compose 文件和 `.env`。[升级与回滚步骤](#从旧版升级或回滚)
+
 1. **创建项目目录并进入**
    ```bash
    mkdir wechat-selkies
@@ -84,44 +87,29 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
    ```
 2. **创建 docker-compose.yml 文件**
    ```yaml
-    services:
-      wechat-selkies:
-        image: nickrunning/wechat-selkies:latest    # or ghcr.io/nickrunning/wechat-selkies:latest
-        container_name: wechat-selkies
-        ports:
-          - "${HTTP_PORT:-3000}:3000"
-          - "${HTTPS_PORT:-3001}:3001"
-        restart: unless-stopped
-        volumes:
-          - ./config:/config
-        devices:
-          - /dev/dri:/dev/dri
-        environment:
-          - PUID=${PUID:-1000}
-          - PGID=${PGID:-100}
-          - TZ=Asia/Shanghai
-          - LC_ALL=zh_CN.UTF-8
-          - AUTO_START_WECHAT=true
-          - AUTO_START_QQ=false
-          - CUSTOM_USER=${CUSTOM_USER:-}
-          - PASSWORD=${PASSWORD:-}
-        shm_size: "${SHM_SIZE:-1gb}"
-    ```
-3. **创建 `.env` 文件（可选）**
-
-   复制 `.env.example` 并按需修改，未设置的变量将使用默认值：
-   ```bash
-   cp .env.example .env
+   services:
+     wechat-selkies:
+       image: nickrunning/wechat-selkies:latest    # or ghcr.io/nickrunning/wechat-selkies:latest
+       container_name: wechat-selkies
+       hostname: ${WECHAT_HOSTNAME:-}
+       volumes:
+         - ./config:/config
+       ports:
+         - "${HTTP_PORT:-3000}:3000"
+         - "${HTTPS_PORT:-3001}:3001"
+       restart: unless-stopped
+       environment:
+         - PUID=${PUID:-1000}
+         - PGID=${PGID:-100}
+         - CUSTOM_USER=${CUSTOM_USER:-abc}
+         - PASSWORD=${PASSWORD:-}
+         - ENABLE_WECHAT_AUTO_LOGIN=${ENABLE_WECHAT_AUTO_LOGIN:-false}
+       shm_size: "${SHM_SIZE:-1gb}"
    ```
-   `.env` 文件示例：
-   ```env
-   HTTP_PORT=3000
-   HTTPS_PORT=3001
-   PUID=1000
-   PGID=100
-   # CUSTOM_USER=
-   # PASSWORD=
-   SHM_SIZE=1gb
+3. **在 `.env` 中设置访问密码**
+
+   ```dotenv
+   PASSWORD=replace-with-your-password
    ```
 4. **启动服务**
    ```bash
@@ -136,9 +124,12 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
    cd wechat-selkies
    ```
 
-2. **启动服务**
+2. **复制配置，在 `.env` 中设置 `PASSWORD`，然后构建并启动**
+
    ```bash
-   docker compose up -d
+   cp .env.example .env
+   # 先编辑 .env 并设置 PASSWORD，再执行下一条命令。
+   docker compose up -d --build
    ```
 
 3. **访问微信**
@@ -150,9 +141,46 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
 > docker build --build-arg INSTALL_QQ=false --build-arg INSTALL_PCMANFM=false -t wechat-selkies:minimal .
 > ```
 
-### 配置说明
+从源码构建时，可在 `.env` 中设置 `INSTALL_QQ=false` 跳过 QQ 安装。
 
-更多自定义配置请参考 [Selkies Base Images from LinuxServer](https://github.com/linuxserver/docker-baseimage-selkies)。
+### 从旧版升级或回滚
+
+`latest` 跟随稳定版发布，`edge` 跟随 `master` 构建。
+
+1. **记录并备份。** 保留原 Compose 文件、`.env` 和镜像版本或摘要。如果旧配置没有写 `PUID`、`PGID`，可在停机前运行 `docker exec wechat-selkies id abc` 查看旧 LinuxServer 容器的实际身份。停止容器后备份完整的 `/config`，备份应保留数字属主和权限。
+2. **沿用原配置。** 新容器继续挂载同一份 `/config`，保留原容器的 UID/GID。仓库提供的 Compose 默认使用 `1000:100`，直接 `docker run` 默认使用 `911:911`。如果切换了部署方式，请显式填写旧值。
+3. **验证与回滚。** 重建后打开微信，检查原账号和聊天记录。若数据看似为空或提示权限不足，先核对挂载路径，再检查当前账号目录的属主和 NAS ACL。旧账号可以只读归档，无需递归修改整个卷的权限。如需回滚，停掉新版，恢复备份和原部署配置，用记录的镜像版本或摘要启动。
+
+以下三项只涉及定制部署。
+
+- **反向代理**。如果 SWAG 已将整个站点转发到 `https://wechat-selkies:3001` 并启用 WebSocket，可以沿用这条转发规则。若以前单独转发到 `CUSTOM_WS_PORT`，请改为与网页相同的上游地址和端口。`CUSTOM_PORT` 和 `CUSTOM_HTTPS_PORT` 仍可指定容器的 Web 端口。
+  如果网页能登录，但桌面连不上，且容器日志出现 `disallowed Origin`，在微信服务的 Compose `environment` 中设置 `SELKIES_ALLOWED_ORIGINS=https://wechat.example.com` 后重建容器。将示例替换为浏览器实际访问的协议、域名和非默认端口，多个来源用逗号分隔。
+- **桌面限制**。如果启用了 LinuxServer 的 `HARDEN_DESKTOP`、`HARDEN_OPENBOX`、`DISABLE_SUDO` 等开关，新容器会提示并退出。先确认新版部署满足原有访问限制，再从 Compose 中移除相应开关。
+- **自定义脚本**。如果用宿主机目录覆盖了容器的 `/scripts`，请把新版脚本同步到该目录。
+
+### AI Agent 通过 API 操作微信
+
+先在浏览器桌面登录微信。你的 AI Agent 可以通过 API 打开指定会话、读取界面上可见的消息，或按你的指示发送消息。API 默认开启，地址是桌面网址后加 `/api/pelorus/`，使用同一组 Web 用户名和密码（HTTP Basic 认证），无需在容器中配置模型密钥。
+
+**安装微信操作技能**。在运行 Agent 的电脑上，进入你希望使用技能的项目目录。使用 Node.js 22.20 或更高版本运行以下命令，按提示选择 Codex、Claude Code 或其他受支持的 Agent。
+
+```bash
+npx skills add nickrunning/wechat-selkies --skill wechat-selkies
+```
+
+默认只安装到当前项目。要在多个项目中使用，可在命令末尾加 `-g`。没有 Node.js 时，也可将 [SKILL.md](skills/wechat-selkies/SKILL.md) 直接交给能调用 HTTP 的 Agent 阅读。[安装工具说明](https://github.com/vercel-labs/skills#install-a-skill)
+
+安装后，给 Agent 配置它能访问的 HTTPS 桌面地址和 Web 登录凭据，再试一句：“使用 wechat-selkies 技能打开文件传输助手，读出最新一条可见消息。”
+
+在本机测试时，下面的命令会提示输入 Web 密码，并列出桌面窗口。用户名默认是 `abc`，`-k` 仅用于本机自签名证书。
+
+```bash
+curl -kfsS -u abc https://localhost:3001/api/pelorus/desktop
+```
+
+`/pelorus/` 是可选的网页助手。只有想直接在这个页面给助手下指令时，才需要在页面中配置模型。
+
+### 配置说明
 
 #### Docker Hub 推送配置
 
@@ -166,55 +194,41 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
 
 #### 环境变量配置
 
-在 `docker-compose.yml` 中可以配置以下环境变量，支持通过 `.env` 文件覆盖带有 `${VAR:-default}` 的配置项：
+若需在快速部署示例中使用更多 `.env` 变量，请将相应项加入服务的 `environment`。可参考仓库的 [docker-compose.yml](docker-compose.yml)。
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `TITLE` | `WeChat Selkies` | Web UI 标题 |
-| `PUID` | `1000` | 用户 ID |
-| `PGID` | `100` | 组 ID |
+| `TITLE` | `WeChat-Selkies` | Web UI 标题 |
+| `PUID` | Compose 为 `1000`，`docker run` 为 `911` | 桌面会话的用户 ID |
+| `PGID` | Compose 为 `100`，`docker run` 为 `911` | 桌面会话的组 ID |
 | `TZ` | `Asia/Shanghai` | 时区设置 |
 | `LC_ALL` | `zh_CN.UTF-8` | 语言环境 |
-| `CUSTOM_USER` | - | 自定义用户名（推荐设置） |
-| `PASSWORD` | - | Web UI 访问密码（推荐设置） |
+| `CUSTOM_USER` | `abc` | Web UI 用户名 |
+| `PASSWORD` | - | 桌面和 API 的访问密码 |
 | `AUTO_START_WECHAT` | `true` | 是否自动启动微信客户端 |
 | `AUTO_START_QQ` | `false` | 是否自动启动 QQ 客户端 |
 | `ENABLE_WECHAT_NIGHTLY_RESTART` | `false` | 是否启用凌晨定时停止与自动重启微信 |
 | `WECHAT_NIGHTLY_STOP_TIME` | `23:30` | 每日自动关闭微信的时刻（HH:MM 格式） |
 | `WECHAT_NIGHTLY_START_TIME` | `01:30` | 每日自动重新启动微信的时刻（HH:MM 格式） |
-| `ENABLE_WECHAT_AUTO_LOGIN` | `true` | 是否在微信启动/重启后自动识别并点击登录按钮 |
+| `ENABLE_WECHAT_AUTO_LOGIN` | Compose 为 `false`，`docker run` 为 `true` | 是否在微信启动/重启后自动识别并点击登录按钮 |
 | `AUTO_LOGIN_DELAY` | `3` | 微信启动后等待 UI 渲染完成的秒数 |
 
-
+使用密码文件时，留空 `PASSWORD`，在容器环境中设置 `SELKIES_BASIC_AUTH_PASSWORD_FILE`，指向桌面用户可读的文件。旧 LinuxServer 部署可沿用 `FILE__PASSWORD`。
 
 #### 端口配置
 
-- `3001`: Web UI 访问端口
+- Compose 的 `HTTP_PORT` 和 `HTTPS_PORT` 是宿主机端口，默认分别为 `3000` 和 `3001`。
+- 如需修改容器监听端口，在服务的 `environment` 中设置 `SELKIES_PORT` 或 `SELKIES_HTTPS_PORT`，并同步修改 `ports` 映射右侧的端口。
 
 #### 数据卷挂载
 
 - `./config:/config`: 微信配置和数据持久化目录
 
-> **注意：** 如果升级后右键菜单缺少 `WeChat` 相关选项，请先清空本地挂载目录下的openbox目录(如`./config/.config/openbox`)。
-
-## 安装第三方应用（如 Telegram）
-
-本项目支持通过 [proot-apps](https://github.com/linuxserver/proot-apps) 安装第三方 Linux 应用。以 Telegram 为例：
-
-1. 在浏览器中打开容器桌面
-2. 点击左侧 **侧边栏** → **应用程序**（Applications）
-3. 在应用列表中找到 **Telegram**
-4. 点击 **安装**（Install）按钮，等待安装完成
-
-安装完成后，应用快捷方式会自动出现在 `~/Desktop/` 目录下，**右键菜单会自动刷新**，无需重启容器即可从菜单中启动该应用。
-
-> **提示：** 如需卸载应用，同样通过侧边栏 → 应用程序，选中对应应用后点击 **卸载**（Uninstall）即可，右键菜单会自动更新。
-
 ## 高级配置
 
 ### 硬件加速
 
-如果您的系统支持 GPU 硬件加速，Docker Compose 配置中已包含相关设备映射：
+如果宿主机有 `/dev/dri` 且需要 GPU 硬件加速，可在 Compose 服务下启用以下设备映射。
 
 ```yaml
 devices:
@@ -232,16 +246,15 @@ wechat-selkies/
 ├── README.md                   # 项目说明文档
 ├── config/                     # 配置和数据持久化目录
 └── root/                       # 容器初始化文件
-    ├── defaults/
-    │   └── autostart           # 自动启动配置
-    └── wechat.png              # 微信图标
+    ├── defaults/              # 菜单模板
+    └── scripts/               # 容器和应用启动脚本
 ```
 
 ## 故障排除
 
 ### 更新微信/QQ版本
 
-当微信或QQ提示"版本过期"时，只需重新拉取最新镜像并重建容器即可，聊天记录和配置不受影响：
+当微信或QQ提示"版本过期"时，可拉取所用发布分支的新版镜像并重建容器即可，聊天记录和配置不受影响：
 
 ```bash
 # 使用预构建镜像
@@ -282,9 +295,10 @@ docker compose logs -f wechat-selkies
 
 ## 技术架构
 
-- **基础镜像**：`ghcr.io/linuxserver/baseimage-selkies:ubuntunoble`
+- **基础镜像**：`ghcr.io/selkies-project/selkies/base:main-ubuntu26.04`
 - **微信客户端**：官方微信 Linux 版本
 - **Web 技术**：Selkies WebRTC
+- **桌面与 API**：Selkies 内置 X11 窗口管理器读取 Openbox 格式菜单和部分窗口规则，Pelorus 提供桌面操作 API。桌面网页及其安装后的 Web 应用使用 `TITLE` 和微信图标，网页助手使用 Pelorus 的名称与图标。[上游接口](https://github.com/selkies-project/selkies/blob/f956c26/crates/selkies/src/pelorus.rs)
 - **容器化**：Docker + Docker Compose
 
 ## 贡献指南
@@ -304,7 +318,6 @@ docker compose logs -f wechat-selkies
 ### 📜 许可证说明
 
 - **项目许可证**: MIT License - 宽松的开源许可证
-- **依赖项说明**: 本项目使用 [LinuxServer.io baseimage-selkies](https://github.com/linuxserver/docker-baseimage-selkies) 作为基础镜像
 - **许可证兼容性**: 由于本项目仅使用基础镜像而未修改其源码，根据容器化软件的许可证实践，可以采用MIT许可证
 - **源码开放**: 完整项目源代码在 GitHub 上公开：https://github.com/nickrunning/wechat-selkies
 
@@ -339,7 +352,6 @@ docker compose logs -f wechat-selkies
 
 - [微信官方网站](https://weixin.qq.com/)
 - [Selkies WebRTC](https://github.com/selkies-project)
-- [LinuxServer.io](https://github.com/linuxserver)
 - [xiaoheiCat/docker-wechat-sogou-pinyin](https://github.com/xiaoheiCat/docker-wechat-sogou-pinyin)
 
 ## Star History
